@@ -143,11 +143,14 @@ const revalidarToken = async (req, res = response) => {
   const { uid, name } = req;
 
   // generar un nuevo JWT y retornarlo
-
+  console.log(uid);
+  console.log(name);
   const token = await generarJWT(uid, name);
 
   res.json({
     ok: true,
+    uid,
+    name,
     token
   });
 }

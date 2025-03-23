@@ -7,6 +7,8 @@ const { validarCampos } = require('../middlewares/validar-campos');
 const { isDate } = require('../helpers/isDate');
 
 
+router.get('/', getAppointments );
+
 router.use(validarJWT);
 
 router.post(
@@ -27,7 +29,6 @@ router.post(
   ],
    createAppointment );
 
-router.get('/', getAppointments );
 
 router.get('/:id', getAppointmentsByClientId );
 
