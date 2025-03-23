@@ -27,9 +27,13 @@ app.use(express.json());
 // rutas
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/events', require('./routes/events'));
+app.use('/api/appointments', require('./routes/appointments'));
+app.use('/api/holidays', require('./routes/holidays'));
 
 
 // escuchar peticiones
 app.listen(port, () => {
   console.log(`Example app listening at http://localhost:${port}`);
 });
+
+

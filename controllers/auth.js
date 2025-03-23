@@ -2,13 +2,15 @@ const { response } = require('express');
 const Usuario = require('../models/Usuario');
 const bcrypt = require('bcryptjs');
 const { generarJWT } = require('../helpers/jwt');
+const Otp = require('../models/OTP');
+const otpRegister = require('../models/RegisterOTP')
 
 
 
 const crearUsuario = async (req, res = response) => {
 
-  const { email, password } = req.body;
-
+  const { name, email, phone, otpRegisterParam } = req.body;
+  console.log(req.body);
   try {
 
   let usuario = await Usuario.findOne({ email });
@@ -20,11 +22,45 @@ const crearUsuario = async (req, res = response) => {
     return;
   }
 
+  if (!phone) {
+    res.status(400).json({
+      ok: false,
+      message: 'Ingrese un numero de telefono'
+    });
+    return;
+  }
+
+  if (!otpRegisterParam) {
+    res.status(400).json({
+      ok: false,
+      message: 'Ingrese un código de verificación'
+    });
+    return;
+  }
+
+  let registerOtp = await otpRegister.findOne({ email });
+  if (!registerOtp) {
+    res.status(400).json({
+      ok: false,
+      message: 'El usuario no tiene un código generado'
+    });
+    return;
+  }
+  
+  //Validar contraseña
+  const validOTPPassword = otpRegisterParam == registerOtp.otp;
+  if (!validOTPPassword) {
+    res.status(400).json({
+      ok: false,
+      message: 'El código ingresado es incorrecto'
+    });
+    return;
+  }
+
   usuario = new Usuario( req.body );
 
-  //Encriptar contraseña
-  const salt = bcrypt.genSaltSync();
-  usuario.password = bcrypt.hashSync(password, salt);
+  
+  usuario.password = otpRegisterParam;
 
   await usuario.save();
   //generar JWT
@@ -35,12 +71,14 @@ const crearUsuario = async (req, res = response) => {
     ok: true,
     uid: usuario._id,
     name: usuario.name,
+    user: usuario,
     token
   });
 } catch (err) {
   res.status(500).json({
     ok: false,
-    message: 'Por favor hable con el administrador'
+    message: 'Por favor hable con el administrador',
+    err: err
   });
 }
 }
@@ -57,13 +95,24 @@ const loginUsuario = async (req, res = response) => {
       });
       return;
     }
-  
-    //Validar contraseña
-    const validPassword = bcrypt.compareSync(password, usuario.password);
-    if (!validPassword) {
+
+    //Validar OTP
+    const otpUser = await Otp.findOne({ idUsuario: usuario._id });  
+    console.log(otpUser);
+    if (!otpUser) {
       res.status(400).json({
         ok: false,
-        message: 'La contraseña es incorrecta'
+        message: 'El usuario no tiene un código generado'
+      });
+      return;
+    }
+  
+    //Validar contraseña
+    const validOTPPassword = password == otpUser.otp;
+    if (!validOTPPassword) {
+      res.status(400).json({
+        ok: false,
+        message: 'El código ingresado es incorrecto'
       });
       return;
     }
@@ -76,12 +125,14 @@ const loginUsuario = async (req, res = response) => {
       ok: true,
       uid: usuario._id,
       name: usuario.name,
+      user: usuario,
       token
     })
   } catch (err) {
     res.status(500).json({
       ok: false,
-      message: 'Por favor hable con el administrador'
+      message: 'Por favor hable con el administrador',
+      err: err
     });
   }
  
@@ -101,9 +152,163 @@ const revalidarToken = async (req, res = response) => {
   });
 }
 
+// otp para ingreso de usuario
+
+const guardarOtp = async (req, res = response) => {
+
+  const { otp, email } = req.body;
+  const date = new Date();
+  console.log(req.body);
+
+  const usuario = await Usuario.findOne({ email });
+  if (!usuario) {
+    res.status(400).json({
+      ok: false,
+      message: 'El usuario no existe con ese email'
+    });
+    return;
+  }
+  const idUsuario = usuario._id;
+  
+  const otpSaved = await Otp.findOne({ idUsuario });
+  if (otpSaved) {
+    res.status(500).json({
+      ok: false,
+      message: 'Ya hay un código generado para éste usuario'
+    });
+    return;
+  }
+
+  try {
+
+  const otpObject = new Otp({
+    date,
+    idUsuario,
+    otp
+  })
+
+  await otpObject.save();
+
+  res.status(201).json({
+    ok: true,
+    Otp,
+    message: 'Otp guardado'
+  });
+} catch (err) {
+  res.status(500).json({
+    ok: false,
+    message: 'Por favor hable con el administrador'
+  });
+}
+}
+
+const getOtp = async (req, res = response) => {
+  const { idUsuario } = req.body;
+  try {
+    const otp = await Otp.findOne({ idUsuario });
+    res.status(200).json({
+      ok: true,
+      otp
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      message: 'Por favor hable con el administrador'
+    });
+  }
+}
+
+const deleteOtp = async (req, res = response) => {
+  const { email } = req.body;
+  console.log(req.body);
+  const usuario = await Usuario.findOne({ email });
+  let usuario1 = await Usuario.findOne({ email });
+  console.log(usuario);
+  console.log(usuario1);
+  try {
+    const otp = await Otp.findOneAndDelete({ idUsuario: usuario._id });
+    res.status(200).json({
+      ok: true,
+      message: 'Otp eliminado'
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      message: 'Por favor hable con el administrador',
+    });
+  }
+}
+// Otp para registro de usuario
+const guardarRegisterOtp = async (req, res = response) => {
+  const { otp, email } = req.body;
+  const date = new Date();
+  console.log("📩 Datos recibidos:", req.body);
+
+  if (!otp || !email) {
+    return res.status(400).json({
+      ok: false,
+      message: "Faltan datos en la solicitud",
+    });
+  }
+
+  try {
+    const otpRegisterObject = new otpRegister({
+      date,
+      email,
+      otp,
+    });
+
+    console.log("💾 Guardando OTP:", otpRegisterObject);
+    await otpRegisterObject.save();
+
+    res.status(201).json({
+      ok: true,
+      message: "Otp para registro guardado",
+      otp: otp, // 🔹 Ahora el frontend recibe el OTP
+      email: email, // (opcional) Enviar el email de vuelta
+    });
+  } catch (err) {
+    console.error("🔥 Error en el servidor:", err);
+    res.status(500).json({
+      ok: false,
+      message: "Por favor hable con el administrador",
+      error: err.message, // 🔹 Enviar error detallado
+    });
+  }
+};
+
+const deleteRegisterOtp = async (req, res = response) => {
+  const { email } = req.body;
+  const usuario = await Usuario.findOne({ email });
+  try {
+    const otp = await otpRegister.findOneAndDelete({ email });
+    res.status(200).json({
+      ok: true,
+      message: "Otp de registroeliminado",
+      otp: otp, // 🔹 Ahora el frontend recibe el OTP
+      email: email, // (opcional) Enviar el email de vuelta
+    });
+  } catch (err) {
+    console.error("🔥 Error en el servidor:", err);
+    res.status(500).json({
+      ok: false,
+      message: "Por favor hable con el administrador",
+      error: err.message, // 🔹 Enviar error detallado
+    });
+  }
+};
+
+
+
 
 module.exports = {
   crearUsuario,
   loginUsuario,
-  revalidarToken
+  revalidarToken,
+  guardarOtp,
+  getOtp,
+  deleteOtp,
+  guardarRegisterOtp,
+  deleteRegisterOtp
+  
 };
